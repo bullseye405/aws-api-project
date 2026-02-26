@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib/core';
-import { ApiProjectStack } from '../lib/api-project-stack';
+import { MyApiStack } from '../lib/api-project-stack';
 
 const app = new cdk.App();
-new ApiProjectStack(app, 'ApiProjectStack', {
+new MyApiStack(app, 'MyApiStack', {
   /* If you don't specify 'env', this stack will be environment-agnostic.
    * Account/Region-dependent features and context lookups will not work,
    * but a single synthesized template can be deployed anywhere. */
