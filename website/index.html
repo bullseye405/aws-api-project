@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>My AWS Site</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        display: grid;
+        place-items: center;
+        height: 100vh;
+        margin: 0;
+        background: #0f172a;
+        color: white;
+        text-align: center;
+      }
+      h1 {
+        font-size: 3rem;
+        margin-bottom: 0.5rem;
+      }
+      p {
+        color: #94a3b8;
+        margin-bottom: 2rem;
+      }
+
+      /* New styles for the API button */
+      button {
+        background: #38bdf8;
+        color: #0f172a;
+        border: none;
+        padding: 12px 24px;
+        font-weight: bold;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 1rem;
+      }
+      button:hover {
+        background: #7dd3fc;
+      }
+      #api-response {
+        margin-top: 1.5rem;
+        font-weight: mono;
+        color: #4ade80; /* Green for success */
+      }
+    </style>
+  </head>
+  <body>
+    <div>
+      <h1>🚀 Deployed with AWS CDK</h1>
+      <p>Hosted on S3 · Served via CloudFront</p>
+
+      <!-- Step 1: Add a button to trigger the API -->
+      <button onclick="callMyApi()">Call Serverless API</button>
+
+      <!-- Step 2: A place to show the response -->
+      <div id="api-response"></div>
+    </div>
+
+    <script>
+      async function callMyApi() {
+        const responseDiv = document.getElementById('api-response');
+        responseDiv.innerText = 'Loading config...';
+
+        try {
+          // 1. Fetch the dynamic config file from YOUR OWN bucket
+          const configResponse = await fetch('./config.json');
+          const config = await configResponse.json();
+
+          console.log({ config });
+
+          // 2. Use the URL from the config file
+          const API_URL = config.apiUrl;
+
+          responseDiv.innerText = 'Calling API...';
+          const response = await fetch(API_URL);
+          const data = await response.text();
+          responseDiv.innerText = data;
+        } catch (error) {
+          responseDiv.innerText = 'Error. Check console.';
+          console.error(error);
+        }
+      }
+    </script>
+  </body>
+</html>
