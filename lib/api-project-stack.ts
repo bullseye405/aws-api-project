@@ -1,4 +1,10 @@
-import { CfnOutput, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
+import {
+  aws_dynamodb,
+  CfnOutput,
+  RemovalPolicy,
+  Stack,
+  StackProps,
+} from 'aws-cdk-lib';
 import { Cors, LambdaRestApi } from 'aws-cdk-lib/aws-apigateway';
 import { Distribution, ViewerProtocolPolicy } from 'aws-cdk-lib/aws-cloudfront';
 import { S3BucketOrigin } from 'aws-cdk-lib/aws-cloudfront-origins';
@@ -25,6 +31,16 @@ export class MyApiStack extends Stack {
         allowOrigins: Cors.ALL_ORIGINS,
       },
     });
+
+    const visitorTable = new aws_dynamodb.Table(this, 'VisitorTable', {
+      partitionKey: { name: 'id', type: aws_dynamodb.AttributeType.STRING },
+      removalPolicy: RemovalPolicy.DESTROY,
+      billingMode: aws_dynamodb.BillingMode.PAY_PER_REQUEST,
+    });
+
+    helloLambda.addEnvironment('TABLE_NAME', visitorTable.tableName);
+
+    visitorTable.grantReadWriteData(helloLambda);
 
     /** FRONTEND: Project 1 Logic **/
     const siteBucket = new Bucket(this, 'SiteBucket', {
