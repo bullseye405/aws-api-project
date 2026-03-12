@@ -2,84 +2,260 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>My AWS Site</title>
+    <title>AWS Secure Site</title>
+    <!-- Using Amplify v4 as per your current setup -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-amplify/4.3.46/aws-amplify.min.js"></script>
+
     <style>
       body {
         font-family: sans-serif;
-        display: grid;
-        place-items: center;
-        height: 100vh;
-        margin: 0;
         background: #0f172a;
         color: white;
+        display: grid;
+        place-items: center;
+        min-height: 100vh;
+        margin: 0;
+      }
+      .container {
+        background: #1e293b;
+        padding: 2rem;
+        border-radius: 12px;
+        width: 350px;
         text-align: center;
       }
-      h1 {
-        font-size: 3rem;
-        margin-bottom: 0.5rem;
+      input {
+        width: 100%;
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 6px;
+        border: none;
+        box-sizing: border-box;
       }
-      p {
-        color: #94a3b8;
-        margin-bottom: 2rem;
-      }
-
-      /* New styles for the API button */
       button {
+        width: 100%;
+        padding: 12px;
+        border: none;
+        border-radius: 8px;
+        font-weight: bold;
+        cursor: pointer;
+        margin-top: 10px;
+        transition: opacity 0.2s;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .primary {
         background: #38bdf8;
         color: #0f172a;
-        border: none;
-        padding: 12px 24px;
-        font-weight: bold;
-        border-radius: 8px;
-        cursor: pointer;
-        font-size: 1rem;
       }
-      button:hover {
-        background: #7dd3fc;
+      .danger {
+        background: #ef4444;
+        color: white;
+      }
+      .hidden {
+        display: none;
       }
       #api-response {
-        margin-top: 1.5rem;
-        font-weight: mono;
-        color: #4ade80; /* Green for success */
+        margin-top: 1rem;
+        color: #4ade80;
+        word-break: break-word;
+        font-family: monospace;
+      }
+      .link {
+        color: #38bdf8;
+        cursor: pointer;
+        text-decoration: underline;
+        font-size: 0.9rem;
       }
     </style>
   </head>
+
   <body>
-    <div>
-      <h1>🚀 Deployed with AWS CDK</h1>
-      <p>Hosted on S3 · Served via CloudFront</p>
+    <div class="container">
+      <h2 id="form-title">🔐 Secure Site</h2>
 
-      <!-- Step 1: Add a button to trigger the API -->
-      <button onclick="callMyApi()">Call Serverless API</button>
+      <!-- Sign In / Sign Up Section -->
+      <div id="auth-section">
+        <input
+          id="email"
+          type="email"
+          placeholder="Email"
+          autocomplete="username"
+        />
+        <input
+          id="password"
+          type="password"
+          placeholder="Password"
+          autocomplete="current-password"
+        />
 
-      <!-- Step 2: A place to show the response -->
-      <div id="api-response"></div>
+        <button id="auth-btn" class="primary">Sign In</button>
+
+        <p id="toggle-text">
+          Don't have an account?
+          <span id="toggle-auth" class="link">Sign Up</span>
+        </p>
+      </div>
+
+      <!-- Verification Section -->
+      <div id="verify-section" class="hidden">
+        <p>Enter the code sent to your email</p>
+        <input id="verify-code" type="text" placeholder="6-Digit Code" />
+        <button id="verify-btn" class="primary">Verify Account</button>
+        <p><span id="back-to-login" class="link">Back to Login</span></p>
+      </div>
+
+      <!-- Logged In Content -->
+      <div id="main-content" class="hidden">
+        <p>Welcome, <span id="user-email" style="font-weight: bold"></span></p>
+        <button id="api-btn" class="primary">Call Locked API</button>
+        <button id="logout-btn" class="danger">Sign Out</button>
+        <div id="api-response"></div>
+      </div>
     </div>
 
     <script>
-      async function callMyApi() {
-        const responseDiv = document.getElementById('api-response');
-        responseDiv.innerText = 'Loading config...';
+      'use strict';
 
-        try {
-          // 1. Fetch the dynamic config file from YOUR OWN bucket
-          const configResponse = await fetch('./config.json');
-          const config = await configResponse.json();
+      document.addEventListener('DOMContentLoaded', () => {
+        const { Amplify, Auth } = window.aws_amplify;
+        let appConfig = null;
+        let isSignUpMode = false;
 
-          console.log({ config });
+        const $ = (id) => document.getElementById(id);
+        const sanitize = (text) => String(text).replace(/[<>]/g, '');
 
-          // 2. Use the URL from the config file
-          const API_URL = config.apiUrl;
+        /* ---------- UI Transitions ---------- */
 
-          responseDiv.innerText = 'Calling API...';
-          const response = await fetch(API_URL);
-          const data = await response.text();
-          responseDiv.innerText = data;
-        } catch (error) {
-          responseDiv.innerText = 'Error. Check console.';
-          console.error(error);
+        function showView(view) {
+          $('auth-section').classList.add('hidden');
+          $('verify-section').classList.add('hidden');
+          $('main-content').classList.add('hidden');
+          $(view).classList.remove('hidden');
         }
-      }
+
+        function toggleAuthMode() {
+          isSignUpMode = !isSignUpMode;
+          $('form-title').textContent = isSignUpMode
+            ? '📝 Create Account'
+            : '🔐 Secure Site';
+          $('auth-btn').textContent = isSignUpMode ? 'Register' : 'Sign In';
+          $('toggle-text').innerHTML = isSignUpMode
+            ? 'Already have an account? <span id="toggle-auth" class="link">Sign In</span>'
+            : 'Don\'t have an account? <span id="toggle-auth" class="link">Sign Up</span>';
+
+          // Re-attach listener because we replaced the innerHTML
+          $('toggle-auth').addEventListener('click', toggleAuthMode);
+        }
+
+        /* ---------- Auth Logic ---------- */
+
+        async function init() {
+          try {
+            const res = await fetch('./config.json', { cache: 'no-store' });
+            appConfig = await res.json();
+
+            Amplify.configure({
+              Auth: {
+                region: appConfig.region,
+                userPoolId: appConfig.userPoolId,
+                userPoolWebClientId: appConfig.userPoolClientId,
+              },
+            });
+
+            await checkUser();
+          } catch (err) {
+            console.error('Init failed:', err);
+          }
+        }
+
+        async function checkUser() {
+          try {
+            const user = await Auth.currentAuthenticatedUser();
+            showView('main-content');
+            $('user-email').textContent = sanitize(user.attributes.email);
+          } catch {
+            showView('auth-section');
+          }
+        }
+
+        async function handleAuth() {
+          const email = $('email').value.trim();
+          const password = $('password').value.trim();
+
+          if (!email || !password) return alert('Enter email and password');
+
+          try {
+            if (isSignUpMode) {
+              await Auth.signUp({
+                username: email,
+                password,
+                attributes: { email },
+              });
+              alert('Check your email for the verification code!');
+              showView('verify-section');
+            } else {
+              await Auth.signIn(email, password);
+              location.reload();
+            }
+          } catch (err) {
+            alert(err.message || 'Auth failed');
+            if (err.code === 'UserNotConfirmedException') {
+              showView('verify-section');
+            }
+          }
+        }
+
+        async function verifyCode() {
+          const email = $('email').value.trim();
+          const code = $('verify-code').value.trim();
+
+          try {
+            await Auth.confirmSignUp(email, code);
+            alert('Account verified! You can now sign in.');
+            isSignUpMode = false;
+            toggleAuthMode();
+            showView('auth-section');
+          } catch (err) {
+            alert(err.message || 'Verification failed');
+          }
+        }
+
+        async function callApi() {
+          const output = $('api-response');
+          output.textContent = 'Calling API...';
+          try {
+            const session = await Auth.currentSession();
+            const token = session.getIdToken().getJwtToken();
+
+            const res = await fetch(appConfig.apiUrl, {
+              headers: { Authorization: token },
+            });
+
+            const text = await res.text();
+            output.textContent = sanitize(text);
+          } catch (err) {
+            output.textContent = 'Unauthorized or API Error';
+          }
+        }
+
+        /* ---------- Event Listeners ---------- */
+
+        $('auth-btn').addEventListener('click', handleAuth);
+        $('toggle-auth').addEventListener('click', toggleAuthMode);
+        $('verify-btn').addEventListener('click', verifyCode);
+        $('back-to-login').addEventListener('click', () =>
+          showView('auth-section'),
+        );
+        $('logout-btn').addEventListener('click', async () => {
+          await Auth.signOut();
+          location.reload();
+        });
+        $('api-btn').addEventListener('click', callApi);
+
+        init();
+      });
     </script>
   </body>
 </html>
