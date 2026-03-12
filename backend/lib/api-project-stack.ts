@@ -86,7 +86,7 @@ export class MyApiStack extends Stack {
 
     new BucketDeployment(this, 'DeployWebsite', {
       sources: [
-        Source.asset('./website'),
+        Source.asset('../frontend/dist'),
         Source.jsonData('config.json', {
           apiUrl: api.url + 'hello', // Updated to point to the resource
           userPoolId: userPool.userPoolId, // Needed for frontend login

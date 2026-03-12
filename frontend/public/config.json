@@ -1,0 +1,6 @@
+{
+  "apiUrl": "https://85kg9l7ut6.execute-api.us-east-1.amazonaws.com/prod/hello",
+  "userPoolId": "us-east-1_zk2WZ5o72",
+  "userPoolClientId": "4gh8jrg034om1oqv104uj08vvo",
+  "region": "us-east-1"
+}
