@@ -111,6 +111,27 @@ export class MyApiStack extends Stack {
       },
     );
 
+    const listLambda = new NodejsFunction(this, 'ListHandler', {
+      entry: 'lambda/list.ts',
+      handler: 'handler',
+      runtime: Runtime.NODEJS_20_X,
+      environment: {
+        STORAGE_BUCKET: storageBucket.bucketName,
+      },
+    });
+
+    storageBucket.grantRead(listLambda);
+
+    const listResource = api.root.addResource('list-files');
+    listResource.addMethod(
+      'GET',
+      new apigateway.LambdaIntegration(listLambda),
+      {
+        authorizer: authorizer,
+        authorizationType: AuthorizationType.COGNITO,
+      },
+    );
+
     /** FRONTEND: Project 1 Logic **/
     const siteBucket = new Bucket(this, 'SiteBucket', {
       blockPublicAccess: BlockPublicAccess.BLOCK_ALL,

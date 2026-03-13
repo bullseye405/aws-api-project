@@ -4,7 +4,6 @@ import {
   Heading,
   Text,
   useAuthenticator,
-  View,
 } from '@aws-amplify/ui-react';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import { useState } from 'react';
@@ -15,7 +14,7 @@ function Header({ apiUrl }: { apiUrl: string }) {
     context.signOut,
   ]);
 
-  const [apiResponse, setApiResponse] = useState('');
+  const [apiResponse, setApiResponse] = useState(0);
 
   const callApi = async () => {
     try {
@@ -26,11 +25,10 @@ function Header({ apiUrl }: { apiUrl: string }) {
         headers: { Authorization: token || '' },
       });
 
-      const text = await res.text();
-      setApiResponse(text);
+      const data = await res.json();
+      setApiResponse(data.count);
     } catch (err) {
       console.error(err);
-      setApiResponse('API Error');
     }
   };
 
@@ -55,7 +53,7 @@ function Header({ apiUrl }: { apiUrl: string }) {
           </Text>
 
           <Button variation="primary" size="small" onClick={callApi}>
-            Call API
+            Count: {apiResponse}
           </Button>
 
           <Button variation="link" size="small" onClick={signOut}>
@@ -63,12 +61,6 @@ function Header({ apiUrl }: { apiUrl: string }) {
           </Button>
         </Flex>
       </Flex>
-
-      {apiResponse && (
-        <View padding="1rem">
-          <Text>{apiResponse}</Text>
-        </View>
-      )}
     </>
   );
 }

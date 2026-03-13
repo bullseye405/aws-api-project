@@ -7,6 +7,7 @@ import './App.css';
 import Header from './components/Header';
 import type { Config } from './types/config';
 import FileUploader from './components/FileUploader';
+import FileGrid from './components/FileGrid';
 
 function App() {
   const [config, setConfig] = useState<Config | null>(null);
@@ -47,6 +48,7 @@ function App() {
     >
       <Header apiUrl={config.apiUrl} />
       <FileUploader apiUrl={config.apiUrl} />
+      <FileGrid apiUrl={config.apiUrl} />
     </Authenticator>
   );
 }
