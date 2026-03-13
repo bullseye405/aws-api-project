@@ -7,12 +7,17 @@ import {
   Stack,
   StackProps,
 } from 'aws-cdk-lib';
-import { Cors, LambdaRestApi, CognitoUserPoolsAuthorizer, AuthorizationType } from 'aws-cdk-lib/aws-apigateway';
+import {
+  Cors,
+  LambdaRestApi,
+  CognitoUserPoolsAuthorizer,
+  AuthorizationType,
+} from 'aws-cdk-lib/aws-apigateway';
 import { Distribution, ViewerProtocolPolicy } from 'aws-cdk-lib/aws-cloudfront';
 import { S3BucketOrigin } from 'aws-cdk-lib/aws-cloudfront-origins';
 import { Runtime } from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
-import { BlockPublicAccess, Bucket } from 'aws-cdk-lib/aws-s3';
+import { BlockPublicAccess, Bucket, HttpMethods } from 'aws-cdk-lib/aws-s3';
 import { BucketDeployment, Source } from 'aws-cdk-lib/aws-s3-deployment';
 import { Construct } from 'constructs';
 
@@ -64,10 +69,47 @@ export class MyApiStack extends Stack {
 
     // Protect your API route with the Cognito Authorizer
     const helloResource = api.root.addResource('hello');
-    helloResource.addMethod('GET', new apigateway.LambdaIntegration(helloLambda), {
-      authorizer: authorizer,
-      authorizationType: AuthorizationType.COGNITO,
+    helloResource.addMethod(
+      'GET',
+      new apigateway.LambdaIntegration(helloLambda),
+      {
+        authorizer: authorizer,
+        authorizationType: AuthorizationType.COGNITO,
+      },
+    );
+
+    const storageBucket = new Bucket(this, 'UserStorageBucket', {
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+      cors: [
+        {
+          allowedMethods: [HttpMethods.PUT, HttpMethods.GET],
+          allowedOrigins: ['*'],
+          allowedHeaders: ['*'],
+        },
+      ],
     });
+
+    const uploadLambda = new NodejsFunction(this, 'UploadHandler', {
+      entry: 'lambda/upload.ts',
+      handler: 'handler',
+      runtime: Runtime.NODEJS_20_X,
+      environment: {
+        STORAGE_BUCKET: storageBucket.bucketName,
+      },
+    });
+
+    storageBucket.grantPut(uploadLambda);
+
+    const uploadResource = api.root.addResource('get-upload-url');
+    uploadResource.addMethod(
+      'POST',
+      new apigateway.LambdaIntegration(uploadLambda),
+      {
+        authorizer: authorizer,
+        authorizationType: AuthorizationType.COGNITO,
+      },
+    );
 
     /** FRONTEND: Project 1 Logic **/
     const siteBucket = new Bucket(this, 'SiteBucket', {
@@ -88,10 +130,10 @@ export class MyApiStack extends Stack {
       sources: [
         Source.asset('../frontend/dist'),
         Source.jsonData('config.json', {
-          apiUrl: api.url + 'hello', // Updated to point to the resource
+          apiUrl: api.url,
           userPoolId: userPool.userPoolId, // Needed for frontend login
           userPoolClientId: userPoolClient.userPoolClientId, // Needed for frontend login
-          region: this.region
+          region: this.region,
         }),
       ],
       destinationBucket: siteBucket,
@@ -102,6 +144,8 @@ export class MyApiStack extends Stack {
     /** OUTPUTS **/
     new CfnOutput(this, 'UserPoolId', { value: userPool.userPoolId });
     new CfnOutput(this, 'ApiURL', { value: api.url });
-    new CfnOutput(this, 'WebsiteURL', { value: `https://${distribution.distributionDomainName}` });
+    new CfnOutput(this, 'WebsiteURL', {
+      value: `https://${distribution.distributionDomainName}`,
+    });
   }
 }

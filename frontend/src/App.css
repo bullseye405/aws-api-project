@@ -2,8 +2,6 @@ body {
   font-family: sans-serif;
   background: #0f172a;
   color: white;
-  display: grid;
-  place-items: center;
   min-height: 100vh;
   margin: 0;
 }

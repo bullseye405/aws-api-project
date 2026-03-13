@@ -22,9 +22,12 @@ export const handler = async (event: any) => {
   return {
     statusCode: 200,
     headers: {
-      'Content-Type': 'text/plain',
+      'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
     },
-    body: `Hello! You are visitor number ${count}.`,
+    body: JSON.stringify({
+      message: `Hello! You are visitor number ${count}.`,
+      count,
+    }),
   };
 };
