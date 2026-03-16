@@ -1,159 +1,167 @@
+import * as cdk from 'aws-cdk-lib';
 import {
-  aws_dynamodb,
-  aws_cognito as cognito, // Added Cognito
-  aws_apigateway as apigateway, // Added for Authorizer types
+  aws_apigateway as apigateway,
   CfnOutput,
+  aws_cloudfront as cloudfront,
+  aws_cognito as cognito,
+  aws_dynamodb as dynamodb,
+  aws_lambda as lambda,
+  aws_lambda_nodejs as lambdaNode,
+  aws_cloudfront_origins as origins,
   RemovalPolicy,
-  Stack,
-  StackProps,
+  aws_s3 as s3,
+  aws_s3_deployment as s3deploy,
 } from 'aws-cdk-lib';
-import {
-  Cors,
-  LambdaRestApi,
-  CognitoUserPoolsAuthorizer,
-  AuthorizationType,
-} from 'aws-cdk-lib/aws-apigateway';
-import { Distribution, ViewerProtocolPolicy } from 'aws-cdk-lib/aws-cloudfront';
-import { S3BucketOrigin } from 'aws-cdk-lib/aws-cloudfront-origins';
-import { Runtime } from 'aws-cdk-lib/aws-lambda';
-import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
-import { BlockPublicAccess, Bucket, HttpMethods } from 'aws-cdk-lib/aws-s3';
-import { BucketDeployment, Source } from 'aws-cdk-lib/aws-s3-deployment';
+import { NodejsFunctionProps } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Construct } from 'constructs';
 
-export class MyApiStack extends Stack {
-  constructor(scope: Construct, id: string, props?: StackProps) {
+export class MyApiStack extends cdk.Stack {
+  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    /** IDENTITY: Project 4 - Cognito **/
+    // --- 1. IDENTITY (Cognito) ---
     const userPool = new cognito.UserPool(this, 'MyUserPool', {
-      selfSignUpEnabled: true, // Allow users to sign themselves up
+      selfSignUpEnabled: true,
       userVerification: { emailStyle: cognito.VerificationEmailStyle.CODE },
       signInAliases: { email: true },
-      removalPolicy: RemovalPolicy.DESTROY,
+      removalPolicy: RemovalPolicy.DESTROY, // Use RETAIN for production
     });
 
     const userPoolClient = userPool.addClient('MyUserPoolClient');
 
-    // Create the "Bouncer" for the API
-    const authorizer = new CognitoUserPoolsAuthorizer(this, 'MyAuthorizer', {
-      cognitoUserPools: [userPool],
-    });
-
-    /** DATABASE: Project 3 **/
-    const visitorTable = new aws_dynamodb.Table(this, 'VisitorTable', {
-      partitionKey: { name: 'id', type: aws_dynamodb.AttributeType.STRING },
-      removalPolicy: RemovalPolicy.DESTROY,
-      billingMode: aws_dynamodb.BillingMode.PAY_PER_REQUEST,
-    });
-
-    /** BACKEND: Project 2 Logic **/
-    const helloLambda = new NodejsFunction(this, 'HelloHandler', {
-      entry: 'lambda/hello.ts',
-      handler: 'handler',
-      runtime: Runtime.NODEJS_20_X,
-      environment: {
-        TABLE_NAME: visitorTable.tableName,
-      },
-    });
-
-    visitorTable.grantReadWriteData(helloLambda);
-
-    const api = new LambdaRestApi(this, 'MyEndpoint', {
-      handler: helloLambda,
-      proxy: false, // Turn off proxy to apply Authorizer to specific methods
-      defaultCorsPreflightOptions: {
-        allowOrigins: Cors.ALL_ORIGINS,
-      },
-    });
-
-    // Protect your API route with the Cognito Authorizer
-    const helloResource = api.root.addResource('hello');
-    helloResource.addMethod(
-      'GET',
-      new apigateway.LambdaIntegration(helloLambda),
+    const authorizer = new apigateway.CognitoUserPoolsAuthorizer(
+      this,
+      'MyAuthorizer',
       {
-        authorizer: authorizer,
-        authorizationType: AuthorizationType.COGNITO,
+        cognitoUserPools: [userPool],
       },
     );
 
-    const storageBucket = new Bucket(this, 'UserStorageBucket', {
+    // --- 2. STORAGE (S3 & DynamoDB) ---
+    const visitorTable = new dynamodb.Table(this, 'VisitorTable', {
+      partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+      removalPolicy: RemovalPolicy.DESTROY,
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+    });
+
+    const storageBucket = new s3.Bucket(this, 'UserStorageBucket', {
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
       cors: [
         {
-          allowedMethods: [HttpMethods.PUT, HttpMethods.GET],
-          allowedOrigins: ['*'],
+          allowedMethods: [
+            s3.HttpMethods.PUT,
+            s3.HttpMethods.GET,
+            s3.HttpMethods.DELETE,
+          ],
+          allowedOrigins: ['*'], // In prod, restrict to CloudFront URL
           allowedHeaders: ['*'],
         },
       ],
     });
 
-    const uploadLambda = new NodejsFunction(this, 'UploadHandler', {
+    // --- 3. BACKEND (Lambda Functions) ---
+    const commonProps: NodejsFunctionProps = {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'handler',
+      environment: {
+        STORAGE_BUCKET: storageBucket.bucketName,
+        TABLE_NAME: visitorTable.tableName,
+      },
+    };
+
+    const helloLambda = new lambdaNode.NodejsFunction(this, 'HelloHandler', {
+      entry: 'lambda/hello.ts',
+      ...commonProps,
+    });
+
+    const uploadLambda = new lambdaNode.NodejsFunction(this, 'UploadHandler', {
       entry: 'lambda/upload.ts',
-      handler: 'handler',
-      runtime: Runtime.NODEJS_20_X,
-      environment: {
-        STORAGE_BUCKET: storageBucket.bucketName,
-      },
+      ...commonProps,
     });
 
-    storageBucket.grantPut(uploadLambda);
-
-    const uploadResource = api.root.addResource('get-upload-url');
-    uploadResource.addMethod(
-      'POST',
-      new apigateway.LambdaIntegration(uploadLambda),
-      {
-        authorizer: authorizer,
-        authorizationType: AuthorizationType.COGNITO,
-      },
-    );
-
-    const listLambda = new NodejsFunction(this, 'ListHandler', {
+    const listLambda = new lambdaNode.NodejsFunction(this, 'ListHandler', {
       entry: 'lambda/list.ts',
-      handler: 'handler',
-      runtime: Runtime.NODEJS_20_X,
-      environment: {
-        STORAGE_BUCKET: storageBucket.bucketName,
+      ...commonProps,
+    });
+
+    const deleteLambda = new lambdaNode.NodejsFunction(this, 'DeleteHandler', {
+      entry: 'lambda/delete.ts',
+      ...commonProps,
+    });
+
+    // --- 4. PERMISSIONS ---
+    visitorTable.grantReadWriteData(helloLambda);
+    storageBucket.grantPut(uploadLambda);
+    storageBucket.grantRead(listLambda);
+    storageBucket.grantDelete(deleteLambda);
+
+    // --- 5. API GATEWAY (RESTful Structure) ---
+    const api = new apigateway.RestApi(this, 'MyEndpoint', {
+      defaultCorsPreflightOptions: {
+        allowOrigins: apigateway.Cors.ALL_ORIGINS,
+        allowMethods: apigateway.Cors.ALL_METHODS,
       },
     });
 
-    storageBucket.grantRead(listLambda);
+    const authOptions: apigateway.MethodOptions = {
+      authorizer: authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    };
 
-    const listResource = api.root.addResource('list-files');
-    listResource.addMethod(
+    // Route: /hello
+    api.root
+      .addResource('hello')
+      .addMethod(
+        'GET',
+        new apigateway.LambdaIntegration(helloLambda),
+        authOptions,
+      );
+
+    // Route: /files (Consolidated for List and Delete)
+    const filesResource = api.root.addResource('files');
+    filesResource.addMethod(
       'GET',
       new apigateway.LambdaIntegration(listLambda),
-      {
-        authorizer: authorizer,
-        authorizationType: AuthorizationType.COGNITO,
-      },
+      authOptions,
+    );
+    filesResource.addMethod(
+      'DELETE',
+      new apigateway.LambdaIntegration(deleteLambda),
+      authOptions,
     );
 
-    /** FRONTEND: Project 1 Logic **/
-    const siteBucket = new Bucket(this, 'SiteBucket', {
-      blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+    // Route: /get-upload-url
+    api.root
+      .addResource('get-upload-url')
+      .addMethod(
+        'POST',
+        new apigateway.LambdaIntegration(uploadLambda),
+        authOptions,
+      );
+
+    // --- 6. FRONTEND (S3 & CloudFront) ---
+    const siteBucket = new s3.Bucket(this, 'SiteBucket', {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       removalPolicy: RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
     });
 
-    const distribution = new Distribution(this, 'SiteDistribution', {
+    const distribution = new cloudfront.Distribution(this, 'SiteDistribution', {
       defaultBehavior: {
-        origin: S3BucketOrigin.withOriginAccessControl(siteBucket),
-        viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        origin: origins.S3BucketOrigin.withOriginAccessControl(siteBucket),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
       },
       defaultRootObject: 'index.html',
     });
 
-    new BucketDeployment(this, 'DeployWebsite', {
+    new s3deploy.BucketDeployment(this, 'DeployWebsite', {
       sources: [
-        Source.asset('../frontend/dist'),
-        Source.jsonData('config.json', {
+        s3deploy.Source.asset('../frontend/dist'),
+        s3deploy.Source.jsonData('config.json', {
           apiUrl: api.url,
-          userPoolId: userPool.userPoolId, // Needed for frontend login
-          userPoolClientId: userPoolClient.userPoolClientId, // Needed for frontend login
+          userPoolId: userPool.userPoolId,
+          userPoolClientId: userPoolClient.userPoolClientId,
           region: this.region,
         }),
       ],
@@ -162,9 +170,7 @@ export class MyApiStack extends Stack {
       distributionPaths: ['/*'],
     });
 
-    /** OUTPUTS **/
-    new CfnOutput(this, 'UserPoolId', { value: userPool.userPoolId });
-    new CfnOutput(this, 'ApiURL', { value: api.url });
+    // --- 7. OUTPUTS ---
     new CfnOutput(this, 'WebsiteURL', {
       value: `https://${distribution.distributionDomainName}`,
     });

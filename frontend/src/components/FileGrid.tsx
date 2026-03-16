@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Card,
   Flex,
@@ -39,33 +39,57 @@ function FileGrid({ apiUrl }: FileGridProps) {
     return '📁';
   };
 
-  useEffect(() => {
-    const fetchFiles = async () => {
-      try {
-        setLoading(true);
+  const fetchFiles = useCallback(async () => {
+    try {
+      setLoading(true);
 
-        const session = await fetchAuthSession();
-        const token = session.tokens?.idToken?.toString();
+      const session = await fetchAuthSession();
+      const token = session.tokens?.idToken?.toString();
 
-        const response = await fetch(`${apiUrl}/list-files`, {
-          headers: { Authorization: token || '' },
-        });
+      const response = await fetch(`${apiUrl}/files`, {
+        headers: { Authorization: token || '' },
+      });
 
-        const data = await response.json();
-        setFiles(data.files || []);
-      } catch (err) {
-        console.error('Failed to fetch gallery:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchFiles();
+      const data = await response.json();
+      setFiles(data.files || []);
+    } catch (err) {
+      console.error('Failed to fetch gallery:', err);
+    } finally {
+      setLoading(false);
+    }
   }, [apiUrl]);
 
-  const handleDelete = (file: FileItem) => {
+  useEffect(() => {
+    fetchFiles();
+  }, [fetchFiles]);
+
+  const handleDelete = async (file: FileItem) => {
     console.log('Delete clicked:', file);
     // TODO: implement delete API later
+    if (!window.confirm('Are you sure you want to delete this file?')) {
+      return;
+    }
+
+    try {
+      const session = await fetchAuthSession();
+      const token = session.tokens?.idToken?.toString();
+
+      const response = await fetch(`${apiUrl}/files`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: token || '',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ key: file.key }),
+      });
+
+      if (response.ok) {
+        alert('Deleted!');
+        fetchFiles(); // Refresh your gallery list
+      }
+    } catch (err) {
+      console.error('Delete failed:', err);
+    }
   };
 
   if (loading) {
