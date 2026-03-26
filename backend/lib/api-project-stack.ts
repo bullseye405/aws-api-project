@@ -14,6 +14,7 @@ import {
 } from 'aws-cdk-lib';
 import { NodejsFunctionProps } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Construct } from 'constructs';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
 
 export class MyApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -90,11 +91,61 @@ export class MyApiStack extends cdk.Stack {
       ...commonProps,
     });
 
+    // Create a VPC with 1 Public and 1 Private subnet in 2 Availability Zones
+    const vpc = new ec2.Vpc(this, 'MyVPC', {
+      ipAddresses: ec2.IpAddresses.cidr('10.0.0.0/16'),
+      maxAzs: 2,
+      subnetConfiguration: [
+        {
+          name: 'PublicSubnet',
+          subnetType: ec2.SubnetType.PUBLIC,
+          cidrMask: 24,
+        },
+        {
+          name: 'PrivateSubnet',
+          // CHANGE THIS TO ISOLATED TO STAY IN FREE TIER
+          subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
+          cidrMask: 24,
+        },
+      ],
+    });
+
+    const securityGroup = new ec2.SecurityGroup(this, 'InstanceSG', {
+      vpc,
+      allowAllOutbound: true,
+      description: 'Allow SSH access',
+    });
+
+    securityGroup.addIngressRule(
+      ec2.Peer.anyIpv4(),
+      ec2.Port.tcp(22),
+      'allow ssh access from the world',
+    );
+
+    const myKeyPair = new ec2.KeyPair(this, 'MyKeyPair', {
+      keyPairName: 'project-6-key',
+      // This will automatically save the private key to AWS Systems Manager Parameter Store
+    });
+
+    const instance = new ec2.Instance(this, 'MyInstance', {
+      vpc,
+      instanceType: ec2.InstanceType.of(
+        ec2.InstanceClass.T3,
+        ec2.InstanceSize.MICRO,
+      ),
+      machineImage: ec2.MachineImage.latestAmazonLinux2023(),
+      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+      securityGroup,
+      keyPair: myKeyPair,
+    });
+
     // --- 4. PERMISSIONS ---
     visitorTable.grantReadWriteData(helloLambda);
+    visitorTable.grantReadData(instance);
     storageBucket.grantPut(uploadLambda);
     storageBucket.grantRead(listLambda);
     storageBucket.grantDelete(deleteLambda);
+    storageBucket.grantRead(instance);
 
     // --- 5. API GATEWAY (RESTful Structure) ---
     const api = new apigateway.RestApi(this, 'MyEndpoint', {
