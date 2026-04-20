@@ -131,6 +131,11 @@ export class MyApiStack extends cdk.Stack {
       ec2.Port.tcp(22),
       'allow ssh access from the world',
     );
+    securityGroup.addIngressRule(
+      ec2.Peer.anyIpv4(),
+      ec2.Port.tcp(80),
+      'allow HTTP traffic from the world',
+    );
 
     const myKeyPair = new ec2.KeyPair(this, 'MyKeyPair', {
       keyPairName: 'project-6-key',
