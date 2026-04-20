@@ -28,3 +28,22 @@ To access the instance without a NAT Gateway (which costs money), use one of the
 
 To connect into ec2
 ssh -i project-key.pem ec2-user@<YOUR_PUBLIC_IP>
+
+Check Your Identity
+aws sts get-caller-identity
+
+Test DynamoDB Permissions
+aws dynamodb list-tables
+aws dynamodb scan --table-name TABLE_NAME
+
+Test S3 Permissions
+aws s3 ls
+
+Achievement
+VPC Construction: Built a custom network with Public and Isolated subnets.
+EC2 Deployment: Launched a Linux server in the cloud via code.
+Cross-Service Communication: Proved that a "virtual computer" (EC2) can securely talk to "serverless" services (S3 and DynamoDB) without using hardcoded passwords or keys.
+Networking Pro: You are using private Gateway Endpoints to save money and increase security.
+
+
+

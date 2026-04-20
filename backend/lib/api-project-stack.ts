@@ -12,9 +12,10 @@ import {
   aws_s3 as s3,
   aws_s3_deployment as s3deploy,
 } from 'aws-cdk-lib';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { NodejsFunctionProps } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Construct } from 'constructs';
-import * as ec2 from 'aws-cdk-lib/aws-ec2';
 
 export class MyApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -110,6 +111,15 @@ export class MyApiStack extends cdk.Stack {
       ],
     });
 
+    // Add Gateway Endpoints for S3 and DynamoDB (Free)
+    vpc.addGatewayEndpoint('S3Endpoint', {
+      service: ec2.GatewayVpcEndpointAwsService.S3,
+    });
+
+    vpc.addGatewayEndpoint('DynamoDBEndpoint', {
+      service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
+    });
+
     const securityGroup = new ec2.SecurityGroup(this, 'InstanceSG', {
       vpc,
       allowAllOutbound: true,
@@ -139,13 +149,13 @@ export class MyApiStack extends cdk.Stack {
       keyPair: myKeyPair,
     });
 
-    // --- 4. PERMISSIONS ---
-    visitorTable.grantReadWriteData(helloLambda);
-    visitorTable.grantReadData(instance);
-    storageBucket.grantPut(uploadLambda);
-    storageBucket.grantRead(listLambda);
-    storageBucket.grantDelete(deleteLambda);
-    storageBucket.grantRead(instance);
+    // Global listing permissions for the EC2 Instance
+    instance.role.addToPrincipalPolicy(
+      new PolicyStatement({
+        actions: ['s3:ListAllMyBuckets', 'dynamodb:ListTables'],
+        resources: ['*'],
+      }),
+    );
 
     // --- 5. API GATEWAY (RESTful Structure) ---
     const api = new apigateway.RestApi(this, 'MyEndpoint', {
@@ -220,6 +230,15 @@ export class MyApiStack extends cdk.Stack {
       distribution,
       distributionPaths: ['/*'],
     });
+
+    // --- 4. PERMISSIONS ---
+    visitorTable.grantReadWriteData(helloLambda);
+    visitorTable.grantReadData(instance.role); // Better to use .role explicitly
+    storageBucket.grantPut(uploadLambda);
+    storageBucket.grantRead(listLambda);
+    storageBucket.grantDelete(deleteLambda);
+    storageBucket.grantRead(instance.role); // The fix for your original error
+    siteBucket.grantRead(instance.role);
 
     // --- 7. OUTPUTS ---
     new CfnOutput(this, 'WebsiteURL', {
