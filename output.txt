@@ -1,0 +1,20 @@
+#!/bin/bash
+export AWS_DEFAULT_REGION=us-east-1
+TABLE_NAME=MyApiStack-VisitorTable8B3D868F-184GA435GI1CY
+BUCKET_NAME=myapistack-userstoragebucket61a883f5-hhm4uessfroz
+COUNT=
+FILES=3
+[ "" == "None" ] || [ -z "" ] && COUNT=0
+echo "<html>" > /usr/share/nginx/html/index.html
+echo "<body style="font-family: sans-serif; text-align: center; padding-top: 50px;">" >> /usr/share/nginx/html/index.html
+echo "<h1>Automated Cloud Dashboard</h1>" >> /usr/share/nginx/html/index.html
+echo "<div style="background: #f4f4f4; border-radius: 10px; display: inline-block; padding: 20px; margin-bottom: 20px;">" >> /usr/share/nginx/html/index.html
+echo "    <p><strong>Bucket:</strong> $BUCKET_NAME </p>" >> /usr/share/nginx/html/index.html
+echo "    <p><strong>Table:</strong> $TABLE_NAME </p>" >> /usr/share/nginx/html/index.html
+echo "</div>" >> /usr/share/nginx/html/index.html
+echo "<div style="background: #eef9ff; border-radius: 10px; display: inline-block; padding: 20px;">" >> /usr/share/nginx/html/index.html
+echo "    <h2>Total Visitors: <span style="color: blue;"> $COUNT</span></h2>" >> /usr/share/nginx/html/index.html
+echo "    <h2>Files in S3: <span style="color: green;"> $FILES </span></h2>" >> /usr/share/nginx/html/index.html
+echo "</div>" >> /usr/share/nginx/html/index.html
+echo "<p>Server last updated: Wed Apr 22 08:28:42 UTC 2026</p>" >> /usr/share/nginx/html/index.html
+echo "</body></html>" >> /usr/share/nginx/html/index.html

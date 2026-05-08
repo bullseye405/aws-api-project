@@ -142,6 +142,62 @@ export class MyApiStack extends cdk.Stack {
       // This will automatically save the private key to AWS Systems Manager Parameter Store
     });
 
+    const userData = ec2.UserData.forLinux();
+    userData.addCommands(
+      'dnf update -y',
+      'dnf install -y nginx',
+      'systemctl start nginx',
+      'systemctl enable nginx',
+
+      // Write generate_site.sh as a single heredoc block so CDK doesn't mangle it.
+      // The outer <<'SCRIPT_EOF' (quoted) prevents shell expansion at write-time;
+      // TypeScript template literals ${} resolve at CDK synth-time.
+      [
+        `cat <<'SCRIPT_EOF' > /home/ec2-user/generate_site.sh`,
+        `#!/bin/bash`,
+        `export AWS_DEFAULT_REGION=${this.region}`,
+        `TABLE_NAME="${visitorTable.tableName}"`,
+        `BUCKET_NAME="${storageBucket.bucketName}"`,
+        ``,
+        `COUNT=$(aws dynamodb scan --table-name "$TABLE_NAME" --query "Count" --output text 2>/dev/null)`,
+        `[ "$COUNT" == "None" ] || [ -z "$COUNT" ] && COUNT=0`,
+        `FILES=$(aws s3api list-objects-v2 --bucket "$BUCKET_NAME" --query "KeyCount" --output text 2>/dev/null)`,
+        `[ "$FILES" == "None" ] || [ -z "$FILES" ] && FILES=0`,
+        `UPDATED=$(date)`,
+        ``,
+        `cat > /usr/share/nginx/html/index.html <<HTML_EOF`,
+        `<!DOCTYPE html>`,
+        `<html lang="en">`,
+        `<head>`,
+        `  <meta charset="UTF-8">`,
+        `  <meta name="viewport" content="width=device-width, initial-scale=1.0">`,
+        `  <title>Automated Cloud Dashboard</title>`,
+        `</head>`,
+        `<body style="font-family: sans-serif; text-align: center; padding-top: 50px;">`,
+        `  <h1>Automated Cloud Dashboard</h1>`,
+        `  <div style="background: #f4f4f4; border-radius: 10px; display: inline-block; padding: 20px; margin-bottom: 20px;">`,
+        `    <p><strong>Bucket Name:</strong> $BUCKET_NAME</p>`,
+        `    <p><strong>Table Name:</strong> $TABLE_NAME</p>`,
+        `  </div>`,
+        `  <br>`,
+        `  <div style="background: #eef9ff; border-radius: 10px; display: inline-block; padding: 20px;">`,
+        `    <h2>Total Visitors: <span style="color: blue;">$COUNT</span></h2>`,
+        `    <h2>Files in S3: <span style="color: green;">$FILES</span></h2>`,
+        `  </div>`,
+        `  <p>Server last updated: $UPDATED</p>`,
+        `</body>`,
+        `</html>`,
+        `HTML_EOF`,
+        `SCRIPT_EOF`,
+      ].join('\n'),
+
+      'chmod +x /home/ec2-user/generate_site.sh',
+      // Run immediately to generate the first version of the site
+      '/home/ec2-user/generate_site.sh',
+
+      // Set up a cron job to refresh the dashboard every 5 minutes
+      '(crontab -l 2>/dev/null; echo "*/5 * * * * /home/ec2-user/generate_site.sh") | crontab -',
+    );
     const instance = new ec2.Instance(this, 'MyInstance', {
       vpc,
       instanceType: ec2.InstanceType.of(
@@ -152,6 +208,7 @@ export class MyApiStack extends cdk.Stack {
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
       securityGroup,
       keyPair: myKeyPair,
+      userData,
     });
 
     // Global listing permissions for the EC2 Instance
